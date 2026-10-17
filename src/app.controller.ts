@@ -10,6 +10,11 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Get('health')
+  health() {
+    return { status: 'ok' };
+  }
+
   @Get('hello')
   getHelloRoute(): string {
     return this.appService.getHello();

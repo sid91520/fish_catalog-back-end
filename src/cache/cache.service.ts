@@ -14,15 +14,23 @@ export class CacheService implements OnModuleDestroy {
 
   constructor(config: ConfigService) {
     this.enabled = config.get('REDIS_ENABLED', 'true') !== 'false';
-    this.redis = new Redis({
-      host: config.get('REDIS_HOST', 'localhost'),
-      port: Number(config.get('REDIS_PORT', 6379)),
-      password: config.get('REDIS_PASSWORD') || undefined,
+    const url = config.get<string>('REDIS_URL'); // e.g. rediss://default:pass@host:6379
+    const options = {
       lazyConnect: !this.enabled,
       enableOfflineQueue: false, // fail fast while disconnected
       maxRetriesPerRequest: 1,
-      retryStrategy: (times) => Math.min(times * 500, 5000),
-    });
+      retryStrategy: (times: number) => Math.min(times * 500, 5000),
+    };
+    this.redis = url
+      ? new Redis(url, options)
+      : new Redis({
+          ...options,
+          host: config.get('REDIS_HOST', 'localhost'),
+          port: Number(config.get('REDIS_PORT', 6379)),
+          password: config.get('REDIS_PASSWORD') || undefined,
+          // Upstash and most hosted Redis require TLS.
+          tls: config.get('REDIS_TLS') === 'true' ? {} : undefined,
+        });
     this.redis.on('error', (err) => this.logger.warn(`Redis: ${err.message}`));
     if (!this.enabled) this.redis.disconnect();
   }

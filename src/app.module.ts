@@ -15,29 +15,51 @@ import { CacheModule } from './cache/cache.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
+// Observe is optional: only enabled when real keys are provided via env.
+export const observeEnabled = Boolean(
+  process.env.OBSERVE_APP_KEY && process.env.OBSERVE_APP_SECRET,
+);
+
 @Module({
   imports: [
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: 'YOUR_APP_KEY',
-      appSecret: 'YOUR_APP_SECRET',
-      serviceId: 'fish-catalog-backend',
-    }),
+    ...(observeEnabled
+      ? [
+          ObserveModule.forRoot({
+            appKey: process.env.OBSERVE_APP_KEY!,
+            appSecret: process.env.OBSERVE_APP_SECRET!,
+            serviceId: 'fish-catalog-backend',
+          }),
+        ]
+      : []),
     ConfigModule.forRoot({ isGlobal: true }),
     SequelizeModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        dialect: 'postgres' as const,
-        host: config.get('DB_HOST', 'localhost'),
-        port: Number(config.get('DB_PORT', 5433)),
-        username: config.get('DB_USER', 'postgres'),
-        password: config.get('DB_PASSWORD', 'root'),
-        database: config.get('DB_NAME', 'fish_catalog'),
-        models: [FishProduct, Lead, Admin],
-        autoLoadModels: true,
-        synchronize: true,
-      }),
+      useFactory: (config: ConfigService) => {
+        // Hosted Postgres (Neon, Supabase, Render) gives one DATABASE_URL and needs SSL.
+        const url = config.get<string>('DATABASE_URL');
+        const useSsl = config.get('DB_SSL', url ? 'true' : 'false') === 'true';
+        const common = {
+          dialect: 'postgres' as const,
+          models: [FishProduct, Lead, Admin],
+          autoLoadModels: true,
+          // Fine for testing; switch to migrations before production.
+          synchronize: config.get('DB_SYNC', 'true') === 'true',
+          dialectOptions: useSsl
+            ? { ssl: { require: true, rejectUnauthorized: false } }
+            : {},
+        };
+        if (url) return { ...common, uri: url };
+        return {
+          ...common,
+          host: config.get('DB_HOST', 'localhost'),
+          port: Number(config.get('DB_PORT', 5433)),
+          username: config.get('DB_USER', 'postgres'),
+          password: config.get('DB_PASSWORD', 'root'),
+          database: config.get('DB_NAME', 'fish_catalog'),
+        };
+      },
     }),
     CacheModule,
     FishProductsModule,
