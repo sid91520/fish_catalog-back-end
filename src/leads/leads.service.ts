@@ -4,6 +4,8 @@ import { Lead } from './lead.model.js';
 import { FishProduct } from '../fish-products/fish-product.model.js';
 import { CreateLeadDto } from './dto/create-lead.dto.js';
 
+export const DEFAULT_PAGE_SIZE = 104;
+
 @Injectable()
 export class LeadsService {
   constructor(
@@ -22,10 +24,22 @@ export class LeadsService {
     });
   }
 
-  findAll() {
-    return this.leads.findAll({
+  async findAll(page = 1, limit = DEFAULT_PAGE_SIZE) {
+    const { rows, count } = await this.leads.findAndCountAll({
       include: [FishProduct],
       order: [['createdAt', 'DESC']],
+      limit,
+      offset: (page - 1) * limit,
+      distinct: true,
     });
+    return {
+      data: rows,
+      meta: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
+    };
   }
 }
